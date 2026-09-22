@@ -46,16 +46,39 @@ export class MarkdownContextualChunker {
         await fs.writeFile(targetFile, JSON.stringify(this.chunks, null, 4), { encoding: 'utf8' });
     }
 
+    /**
+     * Adds the current chunk to the chunks list. When this is called, the currentChunk contains a list of texts, which are the raw texts of the tokens we process.
+     * It may be that the last token makes the chunk too long. If this is the case, then split it to make it fit.
+     * @param {String} fullHeader 
+     * @param {int} fullHeaderTokenSize 
+     */
     _addCurrentChunk(fullHeader, fullHeaderTokenSize) {
         if (this.currentChunk.size + fullHeaderTokenSize > this.chunkMaxSize) {
-            // So this chunk is too large, we should now recursively shorten it, we can look at the tokens it contains.
+            // This chunk is too long. If it has more than one token text, remove the last one and use the previous ones and after that continue with the last one below.
+            if (this.currentChunk.text.length > 1) {
+                const previousTexts = this.currentChunk.text.slice(0, -1).join("");
+                if (previousTexts.trim() !== '') {
+                    const previousTextsTokenSize = this.lengthFunction(previousTexts);
+                    this.chunks.push({
+                        headers: [...this.currentChunk.headers],
+                        text: fullHeader + previousTexts,
+                        size: previousTextsTokenSize + fullHeaderTokenSize
+                    });
+                }
+                this.currentChunk.text = [this.currentChunk.text[this.currentChunk.text.length - 1]];
+                this.currentChunk.size = this.lengthFunction(this.currentChunk.text[0]);
+            }
+
+            // Now we can handle the last text
             const lines = this.currentChunk.text.join("").split("\n");
             let text = [];
             let tokenSize = null;
-            for (const value of lines) {
-                text.push(value);
+            for (const line of lines) {
+                text.push(line);
                 tokenSize = this.lengthFunction(text.join(""));
                 if (fullHeaderTokenSize + tokenSize > this.chunkMaxSize) {
+                    // So now we add it, even it is longer than allowed. We do this to keep sentences and paragraphs to each other.
+                    // TODO: Maybe split it even further? Like a dot (.)? But how about other languages, like Japanese?
                     this.chunks.push({
                         headers: [...this.currentChunk.headers],
                         text: fullHeader + text.join(""),
