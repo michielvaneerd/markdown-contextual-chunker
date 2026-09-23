@@ -7,5 +7,5 @@ function lengthFunction(text) {
     return enc.encode(text).length;
 }
 
-const chunker = new MarkdownContextualChunker('./file2.md', 256, lengthFunction);
+const chunker = new MarkdownContextualChunker('./file2.md', 400);
 await chunker.chunk('./file2.md.json');

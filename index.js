@@ -75,25 +75,28 @@ export class MarkdownContextualChunker {
             const lines = this.currentChunk.text.join("").split("\n");
             let text = [];
             let tokenSize = null;
+            let textString = null;
             for (const line of lines) {
                 text.push(line);
-                tokenSize = this.lengthFunction(text.join(""));
+                textString = text.join("\n");
+                tokenSize = this.lengthFunction(textString);
                 if (fullHeaderTokenSize + tokenSize > this.chunkMaxSize) {
                     // So now we add it, even it is longer than allowed. We do this to keep sentences and paragraphs to each other.
                     // TODO: Maybe split it even further? Like a dot (.)? But how about other languages, like Japanese?
                     this.chunks.push({
                         headers: [...this.currentChunk.headers],
-                        text: fullHeader + text.join(""),
+                        text: fullHeader + textString,
                         size: tokenSize + fullHeaderTokenSize
                     });
                     text = [];
+                    textString = null;
                 }
             }
-            if (text.join("").trim() !== '') {
-                // Check if we have content, because it also can be only newlines, which we don't want to add.
+            //if (text.join("").trim() !== '') {
+            if (textString) {                // Check if we have content, because it also can be only newlines, which we don't want to add.
                 this.chunks.push({
                     headers: [...this.currentChunk.headers],
-                    text: fullHeader + text.join(""),
+                    text: fullHeader + textString,
                     size: tokenSize + fullHeaderTokenSize
                 });
             }
