@@ -14,7 +14,7 @@ const childItemNames = [
 export class MarkdownContextualChunker {
 
     /**
-     * Constructor.
+     * Instantiate a new MarkdownContextualChunker instance.
      * @param {String} sourceFile Source Markdown file.
      * @param {int} chunkMaxSize Max size of chunks.
      * @param {Function} lengthFunction The function that returns the token length for a piece of text.
@@ -32,6 +32,7 @@ export class MarkdownContextualChunker {
 
     /**
      * Execute the chunk and write the output file.
+     * @param {String} targetFile Path of file to write.
      */
     async chunk(targetFile) {
         const markdownText = await fs.readFile(this.sourceFile, { encoding: 'utf8' });
@@ -39,22 +40,23 @@ export class MarkdownContextualChunker {
         marked.parse(markdownText, { walkTokens: boundedWalkTokens });
 
         // Add last chunk
-        if (this.currentChunk.text.join("").trim() !== '') {
-            const fullHeaderInfo = this._getCurrentChunkFullHeaderInfo();
-            this._addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
-        }
+        const fullHeaderInfo = this._getCurrentChunkFullHeaderInfo();
+        this._addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
         await fs.writeFile(targetFile, JSON.stringify(this.chunks, null, 4), { encoding: 'utf8' });
     }
 
     /**
      * Adds the current chunk to the chunks list. When this is called, the currentChunk contains a list of texts, which are the raw texts of the tokens we process.
      * It may be that the last token makes the chunk too long. If this is the case, then split it to make it fit.
-     * @param {String} fullHeader 
-     * @param {int} fullHeaderTokenSize 
+     * @param {String} fullHeader The full header hierarchy as a string.
+     * @param {int} fullHeaderTokenSize The size of the full header.
      */
     _addCurrentChunk(fullHeader, fullHeaderTokenSize) {
+        if (!this.currentChunk.hasContent) {
+            return;
+        }
         if (this.currentChunk.size + fullHeaderTokenSize > this.chunkMaxSize) {
-            // This chunk is too long. If it has more than one token text, remove the last one and use the previous ones and after that continue with the last one below.
+            // This chunk is too long. If it has more than one token text, use all except the last one (because the last one made it too long) and continue below with the last one.
             if (this.currentChunk.text.length > 1) {
                 const previousTexts = this.currentChunk.text.slice(0, -1).join("");
                 if (previousTexts.trim() !== '') {
@@ -69,7 +71,7 @@ export class MarkdownContextualChunker {
                 this.currentChunk.size = this.lengthFunction(this.currentChunk.text[0]);
             }
 
-            // Now we can handle the last text
+            // Now we can handle the last token text. Because this one is too long to fit, we split it across newlines.
             const lines = this.currentChunk.text.join("").split("\n");
             let text = [];
             let tokenSize = null;
@@ -88,6 +90,7 @@ export class MarkdownContextualChunker {
                 }
             }
             if (text.join("").trim() !== '') {
+                // Check if we have content, because it also can be only newlines, which we don't want to add.
                 this.chunks.push({
                     headers: [...this.currentChunk.headers],
                     text: fullHeader + text.join(""),
@@ -104,6 +107,10 @@ export class MarkdownContextualChunker {
 
     }
 
+    /**
+     * Returns the full header and the size of it.
+     * @returns {Object} Header object with full header and size.
+     */
     _getCurrentChunkFullHeaderInfo() {
         const header = '#'.repeat(this.currentChunk.headers.length) + ' ' + this.currentChunk.headers.map((value) => value.text).join(" | ") + "\n";
         const tokenSize = this.lengthFunction(header);
@@ -111,8 +118,8 @@ export class MarkdownContextualChunker {
     }
 
     /**
-     * Default length function.
-     * @param {String} text 
+     * Default length function. If no length function is given, it uses character length.
+     * @param {String} text The text to get the length of.
      * @returns {int} Length of text. By default number of characters. Called should override this with the preferred tokenizer to return number of tokens.
      */
     _lengthFunction(text) {
@@ -131,13 +138,14 @@ export class MarkdownContextualChunker {
         return {
             headers: [...this.headerStack],
             text: [],
-            size: 0
+            size: 0,
+            hasContent: false
         };
     }
 
     /**
      * Recursive function that adds all child tokens of the current token to the childTokensToIgnore map.
-     * @param {Token} token 
+     * @param {Token} token The token to get the child tokens from.
      */
     _getChildTokensToIgnore(token) {
         for (const propertyName of childItemNames) {
@@ -154,7 +162,7 @@ export class MarkdownContextualChunker {
     /**
      * Function that is called by Marked for each token. Child tokens are called first before proceeding to the next sibling token.
      * This function is used to create the chunks.
-     * @param {Token} token 
+     * @param {Token} token The token to walk.
      */
     _walkTokens(token) {
 
@@ -215,9 +223,7 @@ export class MarkdownContextualChunker {
         const fullHeaderInfo = this._getCurrentChunkFullHeaderInfo();
 
         if (this.headerChanged) {
-            if (this.currentChunk.text.join("").trim() !== '') {
-                this._addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
-            }
+            this._addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
             this.currentChunk = this._newChunk();
         } else {
             if (this.currentChunk.size + tokenSize + fullHeaderInfo.tokenSize > this.chunkMaxSize) {
@@ -227,5 +233,8 @@ export class MarkdownContextualChunker {
         }
         this.currentChunk.text.push(content);
         this.currentChunk.size += tokenSize;
+        if (content.trim() !== '') {
+            this.currentChunk.hasContent = true;
+        }
     };
 }

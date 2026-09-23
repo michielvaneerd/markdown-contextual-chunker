@@ -7,5 +7,5 @@ function lengthFunction(text) {
     return enc.encode(text).length;
 }
 
-const chunker = new MarkdownContextualChunker('./owasp-cross-site-request-forgery-prevention-cheat-sheet.md', 256, lengthFunction);
-await chunker.chunk('./owasp-cross-site-request-forgery-prevention-cheat-sheet.md.json');
+const chunker = new MarkdownContextualChunker('./file2.md', 256, lengthFunction);
+await chunker.chunk('./file2.md.json');
