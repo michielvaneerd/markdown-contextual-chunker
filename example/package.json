@@ -1,0 +1,14 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@michielvaneerd/markdown-contextual-chunker": "../michielvaneerd-markdown-contextual-chunker-1.0.0.tgz"
+  },
+  "keywords": []
+}
