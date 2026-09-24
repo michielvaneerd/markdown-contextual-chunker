@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { MarkdownContextualChunker } from './index.js';
+import { MarkdownContextualChunker } from '../src/index.js';
 import { getEncoding } from "js-tiktoken";
 
 const enc = getEncoding("o200k_base");
@@ -8,7 +8,7 @@ function lengthFunction(text) {
     return enc.encode(text).length;
 }
 
-const markdownText = await fs.readFile('./file5.md', { encoding: 'utf8' });
+const markdownText = await fs.readFile('./file-private-1.md', { encoding: 'utf8' });
 
 const chunker = new MarkdownContextualChunker({
     sourceString: markdownText,
@@ -17,4 +17,4 @@ const chunker = new MarkdownContextualChunker({
     tableAsList: true
 });
 const chunks = await chunker.chunk();
-await fs.writeFile('./file5-list.md.json', JSON.stringify(chunks, null, 4), { encoding: 'utf8' });
+await fs.writeFile('./file-private-1.md.json', JSON.stringify(chunks, null, 4), { encoding: 'utf8' });
