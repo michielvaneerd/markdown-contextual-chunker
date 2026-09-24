@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import { marked } from 'marked';
 
 /**
@@ -15,42 +14,53 @@ export class MarkdownContextualChunker {
 
     #headerStack;
     #headerChanged;
-    #lengthFunction;
     #chunks;
     #currentChunk;
-    #chunkMaxSize;
     #childTokensToIgnore;
+    #options;
 
     /**
      * Instantiate a new MarkdownContextualChunker instance.
-     * @param {String} sourceFile Source Markdown file.
-     * @param {int} chunkMaxSize Max size of chunks.
-     * @param {Function} lengthFunction The function that returns the token length for a piece of text.
+     * @param {Object} options Options to use for this instance.
      */
-    constructor(sourceFile, chunkMaxSize, lengthFunction) {
-        this.sourceFile = sourceFile;
+    constructor(options) {
+        this.#options = this.#getOptions(options);
         this.#headerStack = [];
         this.#headerChanged = false;
-        this.#lengthFunction = lengthFunction ?? this.#characterlengthFunction;
         this.#chunks = [];
         this.#currentChunk = null;
-        this.#chunkMaxSize = chunkMaxSize;
         this.#childTokensToIgnore = new Map();
     }
 
     /**
-     * Execute the chunk and write the output file.
-     * @param {String} targetFile Path of file to write.
+     * Returns a complete options object.
+     * @param {Object} options Options by caller.
+     * @returns Object New options object.
      */
-    async chunk(targetFile) {
-        const markdownText = await fs.readFile(this.sourceFile, { encoding: 'utf8' });
-        const boundedWalkTokens = this.#walkTokens.bind(this);
-        marked.parse(markdownText, { walkTokens: boundedWalkTokens });
+    #getOptions(options) {
+        return {
+            lengthFunction: options.lengthFunction ?? this.#characterlengthFunction,
+            chunkMaxSize: options.chunkMaxSize ?? 512,
+            sourceString: options.sourceString,
+            tableAsList: options.tableAsList ?? false
+        };
+    }
+
+    /**
+     * Execute the chunk and returns them.
+     * @returns Array of chunks
+     */
+    async chunk() {
+        let boundedWalkTokens = this.#walkTokens.bind(this);
+        marked.parse(this.#options.sourceString, { walkTokens: boundedWalkTokens });
 
         // Add last chunk
         const fullHeaderInfo = this.#getCurrentChunkFullHeaderInfo();
         this.#addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
-        await fs.writeFile(targetFile, JSON.stringify(this.#chunks, null, 4), { encoding: 'utf8' });
+
+        boundedWalkTokens = null;
+
+        return this.#chunks;
     }
 
     /**
@@ -63,12 +73,12 @@ export class MarkdownContextualChunker {
         if (!this.#currentChunk.hasContent) {
             return;
         }
-        if (this.#currentChunk.size + fullHeaderTokenSize > this.#chunkMaxSize) {
+        if (this.#currentChunk.size + fullHeaderTokenSize > this.#options.chunkMaxSize) {
             // This chunk is too long. If it has more than one token text, use all except the last one (because the last one made it too long) and continue below with the last one.
             if (this.#currentChunk.text.length > 1) {
                 const previousTexts = this.#currentChunk.text.slice(0, -1).join("");
                 if (previousTexts.trim() !== '') {
-                    const previousTextsTokenSize = this.#lengthFunction(previousTexts);
+                    const previousTextsTokenSize = this.#options.lengthFunction(previousTexts);
                     this.#chunks.push({
                         headers: [...this.#currentChunk.headers],
                         text: fullHeader + previousTexts,
@@ -76,7 +86,7 @@ export class MarkdownContextualChunker {
                     });
                 }
                 this.#currentChunk.text = [this.#currentChunk.text[this.#currentChunk.text.length - 1]];
-                this.#currentChunk.size = this.#lengthFunction(this.#currentChunk.text[0]);
+                this.#currentChunk.size = this.#options.lengthFunction(this.#currentChunk.text[0]);
             }
 
             // Now we can handle the last token text. Because this one is too long to fit, we split it across newlines.
@@ -87,8 +97,8 @@ export class MarkdownContextualChunker {
             for (const line of lines) {
                 text.push(line);
                 textString = text.join("\n");
-                tokenSize = this.#lengthFunction(textString);
-                if (fullHeaderTokenSize + tokenSize > this.#chunkMaxSize) {
+                tokenSize = this.#options.lengthFunction(textString);
+                if (fullHeaderTokenSize + tokenSize > this.#options.chunkMaxSize) {
                     // So now we add it, even it is longer than allowed. We do this to keep sentences and paragraphs to each other.
                     // TODO: Maybe split it even further? Like a dot (.)? But how about other languages?
                     this.#chunks.push({
@@ -123,7 +133,7 @@ export class MarkdownContextualChunker {
      */
     #getCurrentChunkFullHeaderInfo() {
         const header = '#'.repeat(this.#currentChunk.headers.length) + ' ' + this.#currentChunk.headers.map((value) => value.text).join(" | ") + "\n";
-        const tokenSize = this.#lengthFunction(header);
+        const tokenSize = this.#options.lengthFunction(header);
         return { header, tokenSize };
     }
 
@@ -133,7 +143,7 @@ export class MarkdownContextualChunker {
      * @returns {int} Length of text. By default number of characters. Called should override this with the preferred tokenizer to return number of tokens.
      */
     #characterlengthFunction(text) {
-        // For example the caller can use the js-tiktoken package and use this to make the #lengthFunction returns the number of tokens:
+        // For example the caller can use the js-tiktoken package and use this to make the #options.lengthFunction returns the number of tokens:
         // const enc = getEncoding("o200k_base");
         // return enc.encode(text).length;
         return text.length;
@@ -205,26 +215,29 @@ export class MarkdownContextualChunker {
                 // We only use headings for setting up the current #headerStack, so return here.
                 return;
             case 'table':
-                // We change a table to a list, where each list item consist of headername1=colvalue1;headername2=colvalue2 etc.
-                // This way tables can be chunked without losing information.
-                const rows = [];
-                for (const row of token.rows) {
-                    const cols = [];
-                    for (let i = 0; i < row.length; i++) {
-                        cols.push(`${token.header[i].text} = ${row[i].text}`);
+                if (this.#options.tableAsList) {
+                    // We change a table to a list, where each list item consist of headername1=colvalue1;headername2=colvalue2 etc.
+                    // This way tables can be chunked without losing information.
+                    // But this only works for relatively simple tables that have one header.
+                    const rows = [];
+                    for (const row of token.rows) {
+                        const cols = [];
+                        for (let i = 0; i < row.length; i++) {
+                            cols.push(`${token.header[i].text} = ${row[i].text}`);
+                        }
+                        rows.push(`- ${cols.join('; ')}`);
                     }
-                    rows.push(`- ${cols.join('; ')}`);
+                    token.raw = rows.join("\n");
+                    token.type = 'list';
+                    delete token.rows;
+                    delete token.header;
+                    token.items = [];
                 }
-                token.raw = rows.join("\n");
-                token.type = 'list';
-                delete token.rows;
-                delete token.header;
-                token.items = [];
                 break;
         }
 
         const content = token.raw;
-        const tokenSize = this.#lengthFunction(content);
+        const tokenSize = this.#options.lengthFunction(content);
 
         if (this.#currentChunk === null) {
             this.#currentChunk = this.#newChunk();
@@ -236,7 +249,7 @@ export class MarkdownContextualChunker {
             this.#addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
             this.#currentChunk = this.#newChunk();
         } else {
-            if (this.#currentChunk.size + tokenSize + fullHeaderInfo.tokenSize > this.#chunkMaxSize) {
+            if (this.#currentChunk.size + tokenSize + fullHeaderInfo.tokenSize > this.#options.chunkMaxSize) {
                 this.#addCurrentChunk(fullHeaderInfo.header, fullHeaderInfo.tokenSize);
                 this.#currentChunk = this.#newChunk();
             }
