@@ -8,7 +8,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@michielvaneerd/markdown-contextual-chunker": "../michielvaneerd-markdown-contextual-chunker-1.0.0.tgz"
+    "@michielvaneerd/markdown-contextual-chunker": "file:.."
   },
   "keywords": []
 }

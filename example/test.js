@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { MarkdownContextualChunker } from '../src/index.js';
 import { getEncoding } from "js-tiktoken";
 // Testing the package: first `npm pack` and than use this to import the test package
-// import { MarkdownContextualChunker } from '@michielvaneerd/markdown-contextual-chunker';
+//import { MarkdownContextualChunker } from '@michielvaneerd/markdown-contextual-chunker';
 
 const enc = getEncoding("o200k_base");
 
